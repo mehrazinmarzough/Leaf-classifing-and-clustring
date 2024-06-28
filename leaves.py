@@ -1,50 +1,48 @@
-import os
 import pandas as pd
-from PIL import Image
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn import svm
+from sklearn.metrics import accuracy_score
+
+df = pd.read_csv("new_data.csv")
+df.drop('1', inplace=True, axis=1)
 
 
-def find_folder(p: str, first_char: int):
-    for entry in os.listdir(p):
-        a = int(first_char / 10)
-        b = first_char % 10
-        if a == 0:
-            if os.path.isdir(os.path.join(p, entry)) and entry[0] == str(b):
-                return os.path.join(p, entry)  # Return full path
-        else:
-            if os.path.isdir(os.path.join(p, entry)) and entry[0] == str(a) and entry[1] == str(b):
-                return os.path.join(p, entry)  # Return full path
+def classification():
+    train, test = train_test_split(df, test_size=0.2, random_state=200)
+    test_y = test['0']
+    test.drop('0', axis=1, inplace=True)
 
-    return None
+    whisker_width = 10
 
-
-def extract_features(image_path):
-    image = Image.open(image_path)
-    image = image.convert('L')
-    image = image.resize((50, 50))
-    features = list(image.getdata())
-    return features
-
-
-def get_new_features():
-    cols = list()
-    for i in range(16, 2516):
-        cols.append(f'{i}')
-    new_df = pd.DataFrame(columns=cols, dtype=float)
-
-    for i in range(1, 37):
-        if 15 < i < 22:
+    for col in train.columns:
+        if col == '0':
             continue
-        path = f'leaves'
-        full_path = find_folder(path, i)
-        for filename in os.listdir(full_path):
-            image_path = full_path + "\\" + filename
-            row = extract_features(image_path)
-            new_df.loc[new_df.shape[0]] = row
+        Q1 = train[col].quantile(0.25)
+        Q3 = train[col].quantile(0.75)
+        IQR = Q3 - Q1
+        low_bound = Q1 - whisker_width * IQR
+        high_bound = Q3 + whisker_width * IQR
+        for i in train.index:
+            if train.loc[i, col] < low_bound or train.loc[i, col] > high_bound:
+                train.drop(i, inplace=True)
 
-    return new_df
+    train_y = train['0']
+    train.drop('0', axis=1, inplace=True)
 
+    scaler = StandardScaler()
+    scaler.fit(train)
 
-df = pd.read_csv("leaves.csv", header=None)
-df = df.join(get_new_features())
-df.to_csv("new_data.csv", index=False)
+    train = scaler.transform(train)
+    test = scaler.transform(test)
 
+    train = pd.DataFrame(train)
+    test = pd.DataFrame(test)
+
+    clf = svm.SVC(C=1, kernel='linear')
+    clf.fit(train, train_y)
+
+    predictions = clf.predict(test)
+
+    accuracy = accuracy_score(test_y, predictions)
+    print("Accuracy:", accuracy)
